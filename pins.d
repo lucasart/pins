@@ -1,36 +1,40 @@
-import std.stdio, std.conv, std.string, std.getopt;
+import std.stdio, std.conv, std.string, std.getopt, std.exception, std.ascii, std.algorithm;
 
 struct Variable {
     string name;
     int start, min, max;
     double c, R;
-
-    this (string[] tokens) {
-        assert(tokens.length == 6);
-
-        name = tokens[0];
-        start = to!int(tokens[1]);
-        min = to!int(tokens[2]);
-        max = to!int(tokens[3]);
-        c = to!double(tokens[4]);
-        R = to!double(tokens[5]);
-
-        writefln("%s,%d,%d,%d,%f,%f", name, start, min, max, c, R);
-    }
 }
 
 Variable[] read_variables(string fileName)
 {
     writefln("Reading variables from %s:", fileName);
-    writeln("name,start,min,max,c,R");
 
     Variable[] variables;
 
     auto f = File(fileName, "r");
     string line;
 
-    while (!(line = f.readln()).empty)
-        variables ~= Variable(line.chop.split(","));
+    // Read file line by line
+    while (!(line = f.readln()).empty) {
+        // Parse line into tokens
+        auto tokens = line.chop.split(",");
+        writeln(tokens);
+
+        // Validate line before casting
+        enforce(tokens.length == 6, "wrong number of columns!");
+        enforce(all!isAlphaNum(tokens[0]), "name must be a string!");
+        enforce(isNumeric(tokens[1]), "start must be numeric!");
+        enforce(isNumeric(tokens[2]), "min must be numeric!");
+        enforce(isNumeric(tokens[3]), "max must be numeric!");
+        enforce(isNumeric(tokens[4]), "c must be numeric!");
+        enforce(isNumeric(tokens[5]), "R must be numeric!");
+
+        // Cast and append to variables[]
+        variables ~= Variable(tokens[0], to!int(tokens[1]),
+            to!int(tokens[2]), to!int(tokens[3]),
+            to!double(tokens[4]), to!double(tokens[5]));
+    }
 
     return variables;
 }
