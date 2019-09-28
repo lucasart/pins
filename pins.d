@@ -1,17 +1,16 @@
-import std.stdio, std.conv, std.string, std.getopt, std.exception, std.ascii, std.algorithm;
+import std.stdio, std.string, std.algorithm, std.conv: to;
 
 struct Variable {
     string name;
-    int start, min, max;
-    double c, R;
+    double start, min, max, c, R;
 }
 
 Variable[] read_variables(string fileName)
 {
-    writefln("Reading variables from %s:", fileName);
+    import std.exception: enforce;
+    import std.ascii: isAlphaNum;
 
     Variable[] variables;
-
     auto f = File(fileName, "r");
     string line;
 
@@ -23,12 +22,9 @@ Variable[] read_variables(string fileName)
 
         // Validate line before casting
         enforce(tokens.length == 6, "wrong number of columns!");
-        enforce(all!isAlphaNum(tokens[0]), "name must be a string!");
-        enforce(isNumeric(tokens[1]), "start must be numeric!");
-        enforce(isNumeric(tokens[2]), "min must be numeric!");
-        enforce(isNumeric(tokens[3]), "max must be numeric!");
-        enforce(isNumeric(tokens[4]), "c must be numeric!");
-        enforce(isNumeric(tokens[5]), "R must be numeric!");
+        enforce(all!isAlphaNum(tokens[0]), tokens[0] ~ " must be a string!");
+        foreach (t; tokens[1..$])
+            enforce(isNumeric(t), t ~ " must be numeric!");
 
         // Cast and append to variables[]
         variables ~= Variable(tokens[0], to!int(tokens[1]),
@@ -39,43 +35,70 @@ Variable[] read_variables(string fileName)
     return variables;
 }
 
+class ChessOptions {
+    string enginePath, bookPath, uciLogPath;
+    int baseTime, increment,
+        resignThreshold, resignCount,
+        drawThreshold, drawCount;
+
+    this() {
+        bookPath = "book.epd";
+        uciLogPath = "uci_%d.log";
+        baseTime = 4000; increment = 40;
+        resignThreshold = 500; resignCount = 6;
+        drawThreshold = 20; drawCount = 8;
+    }
+}
+
+class TuneOptions {
+    string variablesPath, tuneLogPath;
+    int iterations, concurrency;
+
+    this() {
+        variablesPath = "variables.csv";
+        iterations = 100;
+        concurrency = 1;
+        tuneLogPath = "tune.log";
+    }
+}
+
+void run_tuner(ChessOptions chessOptions, TuneOptions tuneOptions)
+{
+    const Variable[] variables = read_variables(tuneOptions.variablesPath);
+    const auto book = File(chessOptions.bookPath).byLine().map!(s => s.chop().split(";")[0]);
+}
+
 void main(string[] args)
 {
-    // Options, with default value (if any)
-    string enginePath,
-        bookPath = "book.epd",
-        variablesPath = "variables.csv",
-        tuneLogPath = "tune.log",
-        uciLogPath = "uci_%d.log";
-    int baseTime = 4000, increment = 40,
-        resignThreshold = 500, resignCount = 6,
-        drawThreshold = 20, drawCount = 8,
-        concurrency = 1, iterations = 10000;
+    import std.getopt;
 
-    // Parse options
-    auto opt = getopt(args,
+    // STEP. Initialize options with their default values
+    auto chessOptions = new ChessOptions();
+    auto tuneOptions = new TuneOptions();
+
+    // STEP. Parse options
+    auto optionInfo = getopt(args,
         // Chess options
-        "engine|e", "uci engine file", &enginePath,
-        "concurrency|c", "[" ~ to!string(concurrency) ~ "] number of concurrent games", &concurrency,
-        "openings|o", "[" ~ bookPath ~ "] file of FEN start positions", &bookPath,
-        "time|t", "[" ~ to!string(baseTime) ~ "] base time in ms", &baseTime,
-        "increment|i", "[" ~ to!string(increment) ~ "] increment in ms", &increment,
-        "resignthreshold|rt", "[" ~ to!string(resignThreshold) ~ "] resign threshold in cp", &resignThreshold,
-        "resigncount|rc", "[" ~ to!string(resignCount) ~ "] resign count in plies", &resignCount,
-        "drawthreshold|dt", "[" ~ to!string(drawThreshold) ~ "] draw threshold in cp", &drawThreshold,
-        "drawcount|dc", "[" ~ to!string(drawCount) ~ "] draw count in plies", &drawCount,
-
+        "engine", "uci engine file", &chessOptions.enginePath,
+        "openings", "[" ~ chessOptions.bookPath ~ "] file of FEN start positions", &chessOptions.bookPath,
+        "time", "[" ~ to!string(chessOptions.baseTime) ~ "] base time in ms", &chessOptions.baseTime,
+        "increment", "[" ~ to!string(chessOptions.increment) ~ "] increment in ms", &chessOptions.increment,
+        "resignthreshold", "[" ~ to!string(chessOptions.resignThreshold) ~ "] resign threshold in cp", &chessOptions.resignThreshold,
+        "resigncount", "[" ~ to!string(chessOptions.resignCount) ~ "] resign count in plies", &chessOptions.resignCount,
+        "drawthreshold", "[" ~ to!string(chessOptions.drawThreshold) ~ "] draw threshold in cp", &chessOptions.drawThreshold,
+        "drawcount", "[" ~ to!string(chessOptions.drawCount) ~ "] draw count in plies", &chessOptions.drawCount,
+        "ucilog", "[" ~ chessOptions.uciLogPath ~ "] log file for uci communications (%d for thread id when using concurrency)", &chessOptions.uciLogPath,
         // SPSA options
-        "variables|v", "[" ~ variablesPath ~ "] csv file of tuning variables", &variablesPath,
-        "tunelog|tl", "[" ~ tuneLogPath ~ "] log file for tuning", &tuneLogPath,
-        "ucilog|ul", "[" ~ uciLogPath ~ "] log file for uci communications (%d for thread id when using concurrency)", &uciLogPath,
-        "iterations|it", "[" ~ to!string(iterations) ~ "] number of iterations, where each iteration plays 2 games", &iterations
+        "variables", "[" ~ tuneOptions.variablesPath ~ "] csv file of tuning variables", &tuneOptions.variablesPath,
+        "iterations", "[" ~ to!string(tuneOptions.iterations) ~ "] number of iterations, where each iteration plays 2 games", &tuneOptions.iterations,
+        "concurrency", "[" ~ to!string(tuneOptions.concurrency) ~ "] number of concurrent games", &tuneOptions.concurrency,
+        "tunelog", "[" ~ tuneOptions.tuneLogPath ~ "] log file for tuning", &tuneOptions.tuneLogPath,
     );
 
-    if (opt.helpWanted) {
-        defaultGetoptPrinter("Options [default]", opt.options);
+    if (optionInfo.helpWanted) {
+        defaultGetoptPrinter("Options [default]", optionInfo.options);
         return;
     }
 
-    const Variable[] variables = read_variables(variablesPath);
+    run_tuner(chessOptions, tuneOptions);
 }
